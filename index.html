@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Honey & Mumford Learning Styles Finder</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#005f73', // Dark Teal
+                        'secondary': '#94d2bd', // Light Blue-Green
+                        'accent': '#ee9b00', // Amber
+                        'background': '#e9ecef', // Light Grey Background
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar for a nicer look */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #005f73;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background-color: #e9ecef;
+        }
+        
+        /* Style for the custom toggle switch - simplified for single action */
+        .toggle-label {
+            transition: color 0.3s;
+            font-weight: 600;
+            cursor: default;
+        }
+        .toggle-checkbox:checked + .toggle-slider {
+            /* Dark Teal track when checked (Agree) */
+            background-color: #005f73; 
+        }
+        .toggle-checkbox:checked + .toggle-slider:before {
+            transform: translateX(1.5rem); /* Adjusted for 1.5rem thumb width on a 3rem track */
+            /* Light Blue-Green thumb when checked */
+            background-color: #94d2bd;
+        }
+        .toggle-slider {
+            background-color: #e0e0e0;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            width: 3.5rem; /* Wider track */
+        }
+        .toggle-slider:before {
+            content: "";
+            position: absolute;
+            left: 0.25rem;
+            top: 0.25rem;
+            width: 1.5rem;
+            height: 1.5rem;
+            background-color: white;
+            transition: transform 0.3s, background-color 0.3s;
+            border-radius: 9999px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-background min-h-screen p-4 font-sans">
+
+    <!-- Main Container -->
+    <div id="app" class="max-w-4xl mx-auto bg-white shadow-xl rounded-2xl p-6 md:p-10 my-8">
+        <header class="text-center mb-10 border-b-2 pb-4 border-secondary">
+            <h1 class="text-3xl md:text-4xl font-extrabold text-primary">Honey & Mumford Learning Styles</h1>
+            <p class="text-gray-600 mt-2">Discover your preferred learning style: Activist, Reflector, Theorist, or Pragmatist.</p>
+            <div id="user-info" class="text-sm text-gray-500 mt-2">
+                Loading user information...
+            </div>
+        </header>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="text-center p-8">
+            <div class="animate-spin inline-block w-8 h-8 border-4 border-primary border-t-transparent rounded-full"></div>
+            <p class="mt-3 text-gray-600">Initialising application and securing connection...</p>
+        </div>
+
+        <!-- Error Message -->
+        <div id="error-message" class="hidden p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg" role="alert">
+            <p class="font-bold">An error occurred:</p>
+            <p id="error-text"></p>
+        </div>
+
+        <!-- Questionnaire and Results -->
+        <div id="content" class="hidden">
+            <!-- Questionnaire Section -->
+            <div id="questionnaire-section">
+                <h2 class="text-2xl font-semibold text-primary mb-6">The Questionnaire (40 Statements)</h2>
+                <!-- SIMPLIFIED INSTRUCTION TEXT - BOLD REMOVED -->
+                <p class="text-sm text-gray-500 mb-6 bg-secondary/20 p-3 rounded-lg">
+                    Instructions: For each statement, simply toggle the switch ON if the statement generally applies to you, or leave it OFF if it does not apply.
+                </p>
+                <div id="questions-list" class="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                    <!-- Questions will be injected here by JavaScript -->
+                </div>
+                
+                <div class="mt-8 pt-6 border-t">
+                    <button onclick="calculateAndSaveResults()" id="submit-button" class="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-300 ease-in-out">
+                        Calculate My Learning Style
+                    </button>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="results-section" class="hidden pt-10">
+                <h2 class="text-3xl font-extrabold text-accent text-center mb-6">Your Learning Style Profile</h2>
+                <div class="bg-primary/10 p-6 rounded-xl shadow-lg mb-8">
+                    <p class="text-lg font-medium text-gray-700 text-center">Your dominant style is:</p>
+                    <p id="dominant-style" class="text-5xl font-extrabold text-primary text-center mt-2 animate-pulse"></p>
+                </div>
+
+                <h3 class="text-xl font-semibold text-primary mb-4 border-b pb-2">Scores Breakdown (Max 11)</h3>
+                <div id="scores-breakdown" class="grid grid-cols-2 gap-4">
+                    <!-- Scores will be injected here -->
+                </div>
+
+                <h3 class="text-xl font-semibold text-primary mt-8 mb-4 border-b pb-2">Style Characteristics</h3>
+                <div id="style-description" class="bg-gray-50 p-4 rounded-lg shadow-inner">
+                    <!-- Description will be injected here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Imports (MUST use type="module" for Canvas) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+
+        // Set Firebase logging level for debugging (optional, but recommended for Firestore)
+        setLogLevel('Debug');
+
+        // Global Firebase variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Application state and services
+        let db, auth, userId;
+        let answers = {};
+        const USER_DATA_COLLECTION = 'learning_styles'; // Private collection for user results
+
+        // Utility function for error handling
+        function displayError(message) {
+            console.error('App Error:', message);
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('error-message').classList.remove('hidden');
+            document.getElementById('error-text').textContent = message;
+        }
+
+        // --- Data Definitions (Questions and Scoring Key) ---
+
+        // The 40 statements from the PDF
+        const QUESTIONS = [
+            "I like to be absolutely correct about things.",
+            "I quite like to take risks.",
+            "I prefer to solve problems using a step by step approach rather than guessing.",
+            "I prefer simple, straightforward things rather than something complicated.",
+            "I often do things just because I feel like it rather than thinking about it first.",
+            "I don't often take things for granted. I like to check things out for myself.",
+            "What matters most about what you learn is whether it works in practice.",
+            "I actively seek out new things to do.",
+            "When I hear about a new idea I immediately start working out how I can try it out.",
+            "I am quite keen on sticking to fixed routines, keeping to timetables, etc.",
+            "I take great care in working things out. I don't like jumping to conclusions.",
+            "I don't like 'loose ends', I prefer to see things fit into some sort of pattern.",
+            "I like to make decisions very carefully and preferably after weighing up all the other possibilities first.",
+            "In discussions I like to get straight to the point.",
+            "I like the challenge of trying something new and different.",
+            "I prefer to think things through before coming to a conclusion.",
+            "I find it difficult to come up with wild ideas off the top of my head.",
+            "I prefer to have as many bits of information about a subject as possible, the more I have to sift through the better.",
+            "I prefer to jump in and do things as they come along rather than plan things out in advance.",
+            "I tend to judge other people's ideas on how they work in practice.",
+            "I don't think that you can make a decision just because something feels right. You have to think about all the facts.",
+            "I am rather fussy about how I do things - a bit of a perfectionist.",
+            "In discussions I usually pitch in with lots of ideas.",
+            "In discussions I put forward ideas that I know will work.",
+            "I prefer to look at problems from as many different angles as I can before starting on them.",
+            "Usually I talk more than I listen.",
+            "Quite often I can work out more practical ways of doing things.",
+            "I believe that careful logical thinking is the key to getting things done.",
+            "If I have to write a formal letter I prefer to try out several rough workings before writing out the final version.",
+            "I like to consider all the alternatives before making my mind up.",
+            "I don't like wild ideas. They are not very practical.",
+            "It is best to look before you leap.",
+            "I usually do more listening than talking.",
+            "It doesn't matter how you do something, as long as it works.",
+            "I can't be bothered with rules and plans, they take all the fun out of things.",
+            "I'm usually the 'life and soul' of the party.",
+            "I do whatever I need to do, to get the job done.",
+            "I like to find out how things work.",
+            "I like meetings or discussion to follow a proper pattern and to keep to a timetable.",
+            "I don't mind in the least if things get a bit out of hand."
+        ];
+
+        // Scoring Key based on the provided PDF table. Note: Q29, 38, 39, 40 score for two styles.
+        // Array index 0-39 maps to Q1-Q40. Value is the style code(s) ('T', 'P', 'A', 'R')
+        const SCORE_MAP = [
+            'T', ['A'], null, ['P'], ['A'], null, ['P'], ['A'], ['P'], null, // Q1-Q10. Note: Q3, Q6, Q10 are unmapped per PDF table.
+            ['R'], 'T', null, ['P'], ['A'], ['R'], 'T', ['R'], ['A'], ['P'], // Q11-Q20. Note: Q13 is unmapped per PDF table.
+            'T', 'T', ['A'], ['P'], ['R'], ['A'], ['P'], 'T', ['T', 'R'], ['R'], // Q21-Q30. Q29 scores for T and R.
+            ['P'], ['R'], ['R'], ['P'], ['A'], ['A'], ['P'], ['T', 'R'], ['T', 'R'], ['A', 'R'] // Q31-Q40. Q38, Q39, Q40 score for two styles.
+        ].map(item => item ? (Array.isArray(item) ? item : [item]) : null);
+
+        const STYLE_DESCRIPTIONS = {
+            A: { name: 'Activist', icon: '⚡', description: "Activists thrive on experience. They enjoy the 'here and now' and are happy to try anything new. They are open-minded, enthusiastic, and often act first, then consider the consequences. They are the life and soul of the party and dislike routine and detailed preparation." },
+            R: { name: 'Reflector', icon: '🤔', description: "Reflectors stand back, observe, and gather data before coming to a conclusion. They think things through thoroughly and take a cautious, distant view. They are methodical, meticulous, and tend to be good listeners, preferring to watch others in action." },
+            T: { name: 'Theorist', icon: '🧠', description: "Theorists adapt and integrate observations into complex, logical, and rational theories. They like to analyse and synthesise, fitting things into a coherent, neat system. They are objective, structured, and enjoy logical thinking, disliking anything subjective or superficial." },
+            P: { name: 'Pragmatist', icon: '🛠️', description: "Pragmatists are keen on trying out ideas, theories, and techniques to see if they work in practice. They actively search for new ideas and take the first opportunity to experiment. They are practical, down-to-earth, and focus on results, often preferring the shortest route between A and B." },
+        };
+
+        // --- Core Functions ---
+
+        // Function to save user's current answers to Firestore
+        async function saveAnswers() {
+            if (!userId || !db) return;
+
+            const userDocRef = doc(db, 'artifacts', appId, 'users', userId, USER_DATA_COLLECTION, 'answers');
+
+            try {
+                await setDoc(userDocRef, {
+                    answers: answers,
+                    lastUpdated: new Date().toISOString(),
+                });
+            } catch (error) {
+                displayError("Failed to save answers to the database: " + error.message);
+            }
+        }
+
+        // Function to load user's previous answers from Firestore
+        async function loadAnswers() {
+            if (!userId || !db) return;
+
+            const userDocRef = doc(db, 'artifacts', appId, 'users', userId, USER_DATA_COLLECTION, 'answers');
+
+            try {
+                const docSnap = await getDoc(userDocRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.answers) {
+                        // Merge loaded answers, overwriting the 'false' defaults only where an answer was saved
+                        answers = { ...answers, ...data.answers };
+                        console.log('Previous answers loaded.');
+                    }
+                }
+            } catch (error) {
+                displayError("Failed to load answers: " + error.message);
+            }
+        }
+
+        // Calculate and Save Results
+        window.calculateAndSaveResults = async function() {
+            // Since we pre-populate the answers object, we just need to confirm all keys are present.
+            if (Object.keys(answers).length !== QUESTIONS.length) {
+                // Using console.error instead of alert per instructions
+                console.error("Not all questions are answered. Please refresh.");
+                return;
+            }
+            
+            const scores = { T: 0, P: 0, A: 0, R: 0 };
+
+            for (let i = 0; i < QUESTIONS.length; i++) {
+                // answers[i] is guaranteed to be true (Applies) or false (Does Not Apply) at this point
+                const userAgreed = answers[i] === true; 
+                const scoringStyles = SCORE_MAP[i];
+
+                // SCORING LOGIC: Only score if the user AGREED (userAgreed === true)
+                if (userAgreed && scoringStyles) {
+                    scoringStyles.forEach(style => {
+                        if (scores.hasOwnProperty(style)) {
+                            scores[style] += 1;
+                        }
+                    });
+                }
+            }
+
+            // Find dominant style(s)
+            let maxScore = -1;
+            let dominantStyles = [];
+            
+            for (const style in scores) {
+                if (scores[style] > maxScore) {
+                    maxScore = scores[style];
+                    dominantStyles = [style];
+                } else if (scores[style] === maxScore) {
+                    dominantStyles.push(style);
+                }
+            }
+            
+            const finalResult = {
+                scores: scores,
+                maxScore: maxScore,
+                dominantStyles: dominantStyles,
+                timestamp: new Date().toISOString(),
+            };
+
+            // 1. Save results to Firestore
+            if (userId && db) {
+                const resultsDocRef = doc(db, 'artifacts', appId, 'users', userId, USER_DATA_COLLECTION, 'latest_result');
+                try {
+                    await setDoc(resultsDocRef, finalResult);
+                    console.log('Results saved successfully.');
+                } catch (error) {
+                    displayError("Failed to save final results: " + error.message);
+                }
+            }
+
+            // 2. Display results
+            displayResults(finalResult);
+        }
+
+        // --- Rendering Functions ---
+
+        // Render the list of questions
+        function renderQuestions() {
+            const listContainer = document.getElementById('questions-list');
+            listContainer.innerHTML = '';
+            
+            QUESTIONS.forEach((qText, index) => {
+                const qNum = index + 1;
+                // answers[index] will be true (Applies) or false (Does Not Apply)
+                const isAgreed = answers[index] === true;
+
+                const questionDiv = document.createElement('div');
+                // Use isAgreed state for visual feedback
+                questionDiv.className = `flex flex-col md:flex-row items-start md:items-center p-4 border border-gray-200 rounded-xl shadow-sm transition duration-150 ${isAgreed ? 'bg-secondary/20 hover:shadow-md border-primary' : 'bg-gray-50'}`;
+                
+                // UPDATED UI: Cleaned up the controls section
+                questionDiv.innerHTML = `
+                    <div class="flex-shrink-0 w-10 h-10 flex items-center justify-center ${isAgreed ? 'bg-primary' : 'bg-gray-400'} text-white font-bold rounded-full mr-4 mb-2 md:mb-0">
+                        ${qNum}
+                    </div>
+                    <p class="flex-grow text-gray-800 font-medium md:mr-6 w-full md:w-auto">${qText}</p>
+                    <div class="flex-shrink-0 mt-3 md:mt-0 w-full md:w-32 flex items-center justify-end">
+                        
+                        <!-- Label for the switch -->
+                        <span class="toggle-label text-sm ${isAgreed ? 'text-primary font-bold' : 'text-gray-500'} mr-3">Applies to me</span>
+                        
+                        <!-- Toggle Switch -->
+                        <label class="relative inline-block w-16 h-7">
+                            <!-- Checkbox: checked=Applies, unchecked=Does Not Apply -->
+                            <input type="checkbox" id="q${index}" class="hidden toggle-checkbox" ${isAgreed ? 'checked' : ''} onchange="handleToggle(${index}, this.checked)">
+                            <div class="absolute inset-0 rounded-full toggle-slider transition duration-300 ${isAgreed ? 'bg-secondary' : 'bg-gray-300'}"></div>
+                        </label>
+                    </div>
+                `;
+                listContainer.appendChild(questionDiv);
+            });
+        }
+        
+        // This handler toggles the stored answer (true/false)
+        window.handleToggle = function(index, checked) {
+            answers[index] = checked;
+
+            saveAnswers(); // Persist answer immediately
+            
+            // Re-render the list to update the visual state
+            renderQuestions(); 
+        }
+
+        // Display the calculated results
+        function displayResults(result) {
+            document.getElementById('questionnaire-section').classList.add('hidden');
+            document.getElementById('results-section').classList.remove('hidden');
+
+            const dominantStyleKeys = result.dominantStyles;
+            const styleNames = dominantStyleKeys.map(key => STYLE_DESCRIPTIONS[key].name);
+            const styleIcons = dominantStyleKeys.map(key => STYLE_DESCRIPTIONS[key].icon);
+
+            // Display dominant style(s)
+            document.getElementById('dominant-style').innerHTML = `${styleIcons.join(' / ')} ${styleNames.join(' / ')}`;
+            
+            // Display scores breakdown
+            const scoresHtml = Object.keys(result.scores).map(key => {
+                const style = STYLE_DESCRIPTIONS[key];
+                const score = result.scores[key];
+                const isDominant = dominantStyleKeys.includes(key);
+                return `
+                    <div class="p-4 rounded-xl transition duration-300 ${isDominant ? 'bg-accent/20 border-accent border-2 shadow-lg' : 'bg-gray-100 border border-gray-200'}"
+                         style="order: ${isDominant ? 0 : 1}">
+                        <p class="text-xl font-bold ${isDominant ? 'text-accent' : 'text-primary'}">${style.icon} ${style.name}</p>
+                        <p class="text-3xl font-extrabold mt-1 ${isDominant ? 'text-accent' : 'text-primary'}">${score} <span class="text-base font-normal text-gray-500">/ 11 max</span></p>
+                    </div>
+                `;
+            }).join('');
+            document.getElementById('scores-breakdown').innerHTML = scoresHtml;
+
+            // Display combined description (for multiple dominant styles)
+            const descriptionHtml = dominantStyleKeys.map(key => {
+                const style = STYLE_DESCRIPTIONS[key];
+                return `<p class="mb-4"><strong class="text-lg text-primary">${style.icon} ${style.name}:</strong> ${style.description}</p>`;
+            }).join('<hr class="my-4 border-secondary">');
+            document.getElementById('style-description').innerHTML = descriptionHtml;
+        }
+
+        // --- Firebase Initialisation and Auth ---
+
+        async function initializeFirebase() {
+            if (Object.keys(firebaseConfig).length === 0) {
+                displayError("Firebase configuration is missing. The application cannot connect to the database.");
+                return;
+            }
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Sign in with custom token or anonymously
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                // Wait for auth state to be established
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        document.getElementById('user-info').textContent = `User ID: ${userId.substring(0, 8)}... (Multi-user ready)`;
+                        document.getElementById('loading').classList.add('hidden');
+                        document.getElementById('content').classList.remove('hidden');
+
+                        // 1. Initialize all questions to 'Does Not Apply' (false)
+                        for (let i = 0; i < QUESTIONS.length; i++) {
+                            answers[i] = false;
+                        }
+
+                        // 2. Load previous data (this will overwrite 'false' with saved 'true' values)
+                        await loadAnswers();
+                        
+                        // 3. Render and allow submission immediately
+                        renderQuestions();
+
+                    } else {
+                        // This should ideally not happen if signInAnonymously is successful
+                        displayError("Authentication failed. Cannot access user data.");
+                    }
+                });
+
+            } catch (error) {
+                displayError(`Failed to initialize or authenticate with Firebase: ${error.message}`);
+            }
+        }
+
+        // Start the application
+        initializeFirebase();
+
+    </script>
+</body>
+</html>
