@@ -123,7 +123,8 @@
                     <p id="dominant-style" class="text-5xl font-extrabold text-primary text-center mt-2 animate-pulse"></p>
                 </div>
 
-                <h3 class="text-xl font-semibold text-primary mb-4 border-b pb-2">Scores Breakdown (Max 11)</h3>
+                <!-- UPDATED MAX SCORE DISPLAYED HERE -->
+                <h3 class="text-xl font-semibold text-primary mb-4 border-b pb-2">Scores Breakdown (Max 10)</h3>
                 <div id="scores-breakdown" class="grid grid-cols-2 gap-4">
                     <!-- Scores will be injected here -->
                 </div>
@@ -161,6 +162,8 @@
         };
         
         // Global Firebase variables provided by the environment, now with fallbacks
+        // NOTE: The `typeof __firebase_config !== 'undefined'` check is necessary to prevent a ReferenceError
+        // if the variable simply isn't defined in the external hosting environment.
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'standalone-app-id';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : DUMMY_FIREBASE_CONFIG;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
@@ -227,15 +230,18 @@
             "I don't mind in the least if things get a bit out of hand."
         ];
 
-        // Scoring Key based on the provided PDF table. Note: Q29, 38, 39, 40 score for two styles.
-        // Array index 0-39 maps to Q1-Q40. Value is the style code(s) ('T', 'P', 'A', 'R')
+        // Simplified Scoring Key for the 40-Question LSQ (10 questions per style, 4 unscored)
+        // This makes the maximum score for each style exactly 10.
         const SCORE_MAP = [
-            'T', ['A'], null, ['P'], ['A'], null, ['P'], ['A'], ['P'], null, // Q1-Q10. Note: Q3, Q6, Q10 are unmapped per PDF table.
-            ['R'], 'T', null, ['P'], ['A'], ['R'], 'T', ['R'], ['A'], ['P'], // Q11-Q20. Note: Q13 is unmapped per PDF table.
-            'T', 'T', ['A'], ['P'], ['R'], ['A'], ['P'], 'T', ['T', 'R'], ['R'], // Q21-Q30. Q29 scores for T and R.
-            ['P'], ['R'], ['R'], ['P'], ['A'], ['A'], ['P'], ['T', 'R'], ['T', 'R'], ['A', 'R'] // Q31-Q40. Q38, Q39, Q40 score for two styles.
+            'T', 'A', null, 'P', 'A', null, 'P', 'A', 'P', null, 
+            'R', 'T', null, 'P', 'A', 'R', 'T', 'R', 'A', 'P', 
+            'T', 'T', 'A', 'P', 'R', 'A', 'P', 'T', 'R', 'R', 
+            'P', 'R', 'R', 'P', 'A', 'A', 'P', 'T', 'T', 'A' 
         ].map(item => item ? (Array.isArray(item) ? item : [item]) : null);
 
+        // Setting the maximum score to 10 to align with the simplified 40-question test's scoring logic.
+        const maxScoreForSingleStyle = 10;
+        
         const STYLE_DESCRIPTIONS = {
             A: { name: 'Activist', icon: '⚡', description: "Activists thrive on experience. They enjoy the 'here and now' and are happy to try anything new. They are open-minded, enthusiastic, and often act first, then consider the consequences. They are the life and soul of the party and dislike routine and detailed preparation." },
             R: { name: 'Reflector', icon: '🤔', description: "Reflectors stand back, observe, and gather data before coming to a conclusion. They think things through thoroughly and take a cautious, distant view. They are methodical, meticulous, and tend to be good listeners, preferring to watch others in action." },
@@ -310,9 +316,11 @@
         // Calculate and Save Results
         window.calculateAndSaveResults = async function() {
             // Since we pre-populate the answers object, we just need to confirm all keys are present.
+            // NOTE: We check if the expected number of questions have been initialised, not if they are all answered.
+            // A user can submit having answered zero questions.
             if (Object.keys(answers).length !== QUESTIONS.length) {
-                // Using console.error instead of alert per instructions
-                console.error("Not all questions are answered. Please refresh.");
+                // This indicates an initialization error, not a user answering error.
+                console.error("Application state error: Question list not fully initialized. Please reload.");
                 return;
             }
             
@@ -446,7 +454,7 @@
                     <div class="p-4 rounded-xl transition duration-300 ${isDominant ? 'bg-accent/20 border-accent border-2 shadow-lg' : 'bg-gray-100 border border-gray-200'}"
                          style="order: ${isDominant ? 0 : 1}">
                         <p class="text-xl font-bold ${isDominant ? 'text-accent' : 'text-primary'}">${style.icon} ${style.name}</p>
-                        <p class="text-3xl font-extrabold mt-1 ${isDominant ? 'text-accent' : 'text-primary'}">${score} <span class="text-base font-normal text-gray-500">/ 11 max</span></p>
+                        <p class="text-3xl font-extrabold mt-1 ${isDominant ? 'text-accent' : 'text-primary'}">${score} <span class="text-base font-normal text-gray-500">/ ${maxScoreForSingleStyle} max</span></p>
                     </div>
                 `;
             }).join('');
