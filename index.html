@@ -140,17 +140,34 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // We still import Firestore functions but we will handle the scenario where we can't connect to a real database.
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 
         // Set Firebase logging level for debugging (optional, but recommended for Firestore)
         setLogLevel('Debug');
 
-        // Global Firebase variables provided by the environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        // --- ENVIRONMENT HANDLING AND CONFIGURATION FIX ---
+        
+        // Use a dummy configuration for external environments since the real one is missing.
+        // This allows Firebase functions to be initialised without throwing the "config missing" error.
+        const DUMMY_FIREBASE_CONFIG = {
+            apiKey: "dummy-key",
+            authDomain: "dummy-project.firebaseapp.com",
+            projectId: "dummy-project",
+            storageBucket: "dummy-project.appspot.com",
+            messagingSenderId: "000000000000",
+            appId: "1:000000000000:web:0000000000000000000000"
+        };
+        
+        // Global Firebase variables provided by the environment, now with fallbacks
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'standalone-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : DUMMY_FIREBASE_CONFIG;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
+        
+        // Flag to check if we are using the dummy configuration (i.e., running outside the Canvas)
+        const isStandalone = firebaseConfig === DUMMY_FIREBASE_CONFIG;
+        
         // Application state and services
         let db, auth, userId;
         let answers = {};
@@ -228,10 +245,21 @@
 
         // --- Core Functions ---
 
-        // Function to save user's current answers to Firestore
+        // Function to save user's current answers to Firestore (or fake it in standalone mode)
         async function saveAnswers() {
-            if (!userId || !db) return;
+            if (isStandalone) {
+                // In standalone mode, save to localStorage to maintain state across sessions
+                try {
+                    localStorage.setItem(`h_m_answers_${appId}_${userId}`, JSON.stringify(answers));
+                    console.log('Answers saved to localStorage (Standalone Mode).');
+                } catch (e) {
+                    console.warn('Could not save to localStorage.', e);
+                }
+                return;
+            }
 
+            // Real Firestore logic
+            if (!userId || !db) return;
             const userDocRef = doc(db, 'artifacts', appId, 'users', userId, USER_DATA_COLLECTION, 'answers');
 
             try {
@@ -244,10 +272,24 @@
             }
         }
 
-        // Function to load user's previous answers from Firestore
+        // Function to load user's previous answers from Firestore (or localStorage in standalone mode)
         async function loadAnswers() {
-            if (!userId || !db) return;
+            if (isStandalone) {
+                 // In standalone mode, load from localStorage
+                try {
+                    const savedAnswers = localStorage.getItem(`h_m_answers_${appId}_${userId}`);
+                    if (savedAnswers) {
+                        answers = { ...answers, ...JSON.parse(savedAnswers) };
+                        console.log('Previous answers loaded from localStorage (Standalone Mode).');
+                    }
+                } catch (e) {
+                    console.warn('Could not load from localStorage.', e);
+                }
+                return;
+            }
 
+            // Real Firestore logic
+            if (!userId || !db) return;
             const userDocRef = doc(db, 'artifacts', appId, 'users', userId, USER_DATA_COLLECTION, 'answers');
 
             try {
@@ -257,7 +299,7 @@
                     if (data.answers) {
                         // Merge loaded answers, overwriting the 'false' defaults only where an answer was saved
                         answers = { ...answers, ...data.answers };
-                        console.log('Previous answers loaded.');
+                        console.log('Previous answers loaded from Firestore.');
                     }
                 }
             } catch (error) {
@@ -311,14 +353,22 @@
                 timestamp: new Date().toISOString(),
             };
 
-            // 1. Save results to Firestore
-            if (userId && db) {
+            // 1. Save results to Firestore (or fake it in standalone mode)
+            if (!isStandalone && userId && db) {
                 const resultsDocRef = doc(db, 'artifacts', appId, 'users', userId, USER_DATA_COLLECTION, 'latest_result');
                 try {
                     await setDoc(resultsDocRef, finalResult);
-                    console.log('Results saved successfully.');
+                    console.log('Results saved successfully to Firestore.');
                 } catch (error) {
                     displayError("Failed to save final results: " + error.message);
+                }
+            } else if (isStandalone) {
+                 // In standalone mode, save results to localStorage
+                try {
+                    localStorage.setItem(`h_m_results_${appId}_${userId}`, JSON.stringify(finalResult));
+                    console.log('Results saved to localStorage (Standalone Mode).');
+                } catch (e) {
+                    console.warn('Could not save results to localStorage.', e);
                 }
             }
 
@@ -413,11 +463,32 @@
         // --- Firebase Initialisation and Auth ---
 
         async function initializeFirebase() {
-            if (Object.keys(firebaseConfig).length === 0) {
-                displayError("Firebase configuration is missing. The application cannot connect to the database.");
-                return;
+            if (isStandalone) {
+                // In standalone mode, skip Firebase initialization but mock the user setup
+                console.warn("Running in Standalone Mode. Data will be saved to localStorage instead of Firestore.");
+
+                // Mock user ID (like a temporary session ID)
+                let tempUserId = localStorage.getItem('h_m_temp_user_id');
+                if (!tempUserId) {
+                    tempUserId = `temp-${Math.random().toString(36).substring(2, 15)}`;
+                    localStorage.setItem('h_m_temp_user_id', tempUserId);
+                }
+                userId = tempUserId;
+                
+                document.getElementById('user-info').textContent = `User ID: ${userId.substring(0, 8)}... (Standalone Mode - data saved locally)`;
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('content').classList.remove('hidden');
+
+                // Continue with local data loading and rendering
+                for (let i = 0; i < QUESTIONS.length; i++) {
+                    answers[i] = false;
+                }
+                await loadAnswers();
+                renderQuestions();
+                return; // Stop execution here for standalone mode
             }
 
+            // --- Real Firebase/Canvas Mode ---
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
@@ -456,6 +527,7 @@
                 });
 
             } catch (error) {
+                // If real Firebase fails to initialize even with a configuration (e.g., API key is wrong), show a specific error.
                 displayError(`Failed to initialize or authenticate with Firebase: ${error.message}`);
             }
         }
